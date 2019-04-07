@@ -1,8 +1,46 @@
-## 0.5.6 (development)
+## 0.5.9
 #### new features
-* Download files attached to tasks
 
 #### improvements
+
+#### fixes
+* Set CalendarURL to null when it's not in the response
+
+## 0.5.8
+#### new features
+
+#### improvements
+
+#### fixes
+* fixed version check
+
+## 0.5.7
+#### new features
+
+#### improvements
+* Show notification while downloading file
+* Show error message when server returns invalid resonses (Login screen)
+* Follow URL redirects (HTTP codes 301, 302, 307, 308)
+* Automatically change the server URL to the correct endpoint if possible
+* Show error message when all swimlanes are deactivated
+* Moved new comment button to listview
+* Moved new subtask button to listview
+
+#### fixes
+* fixed crash when user has assigned tasks but no projects
+* fixed crash when trying to change swimlane/column while receiving data
+* fixed crash when trying to add subtask/comment while receiving data
+* handle deactivated swimlanes correctly
+* Various bug fixes
+
+## 0.5.6
+#### new features
+* Download files attached to tasks
+* Move task to other columns
+* Move task to other swimlane
+
+#### improvements
+* sort task by position value
 
 #### fixes
 * Various bug fixes

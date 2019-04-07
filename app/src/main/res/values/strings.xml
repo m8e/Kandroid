@@ -15,6 +15,7 @@
     <string name="prompt_password">Password</string>
     <string name="action_sign">Sign in</string>
     <string name="error_server_url">Unable to contact server</string>
+    <string name="error_server_resonse">Invalid response from server.\nPlease check URL.</string>
     <string name="error_host_unknown">Unknown host</string>
     <string name="error_invalid_password">This password is too short</string>
     <string name="error_incorrect_username">This username is incorrect</string>
@@ -43,7 +44,7 @@
     <string name="pref_acra_user_email">Email address</string>
     <string name="pref_acra_user_email_summary">Email address to be included in the reports</string>
     <string name="pref_acra_alwaysaccept">Send reports automatically</string>
-    <string name="pref_acra_alwaysaccept_enabled">Berichte werden automatisch gesendet</string>
+    <string name="pref_acra_alwaysaccept_enabled">Reports are sent automatically</string>
     <string name="pref_acra_alwaysaccept_disabled">Send reports must be confirmed</string>
 
     <!-- Strings related to Tabs -->
@@ -52,6 +53,9 @@
     <string name="tab_activity">Activities</string>
     <string name="tab_overview">Overview</string>
     <string name="tab_inactive_tasks">Inactive Tasks</string>
+
+    <string name="hint_swimlane_deactivated">Some swimlanes are deactivated</string>
+    <string name="error_swimlanes_deactivated">All swimlanes are deactivated!\nPlease enable at least one swimlane.</string>
 
     <string name="caption_name">Name:</string>
     <string name="caption_description"><big><b><u>Description</u></b></big></string>
@@ -123,6 +127,8 @@
     <string name="taskview_fab_open_task">Open Task</string>
     <string name="taskview_fab_remove_task">Delete Task</string>
     <string name="taskview_fab_edit_task">Edit Task</string>
+    <string name="taskview_fab_change_column">Change Column</string>
+    <string name="taskview_fab_change_swimlane">Change Swimlane</string>
     <string name="task_not_assigned">not assigned</string>
     <string name="subtask_dlg_owner">Owner:</string>
     <string name="subtask_dlg_title">Title:</string>
@@ -150,8 +156,14 @@
     <string name="taskedit_clear_date">Clear</string>
     <string name="taskedit_owner">Owner:</string>
     <string name="taskedit_priority">Priority:</string>
+    <string name="taskedit_column">Column:</string>
     <string name="taskedit_color"><![CDATA[<b>Color:</b> %s]]></string>
     <string name="taskedit_seclect_color">Select a color</string>
+    <string name="toast_wait_loading">Please wait. Still loading data.</string>
+    
+    <string name="permission_storage_granted">Storage permission was granted, please start the download again.</string>
+    <string name="permission_storage_denied">Storage permission was denied.</string>
+    <string name="error_no_sdcard">No storage device available.</string>
 
     <!--Menu strings-->
     <string name="action_edit">Edit</string>
@@ -160,6 +172,12 @@
     <string name="menu_caption_comment">Comment #%d</string>
     <string name="menu_caption_subtask">Comment #%d</string>
     <string name="menu_caption_file">File #%d</string>
+
+    <!--Service strings-->
+    <string name="service_downloading">Downloading file…</string>
+    <string name="service_result_empty">Couldn\'t download file!</string>
+    <string name="error_base64_decode">Unable to decode file.</string>
+    <string name="download_manager_name">Kandroid file</string>
 
     <!--ARAC strings-->
     <string name="acra_send_mail" translatable="false">Send email</string>

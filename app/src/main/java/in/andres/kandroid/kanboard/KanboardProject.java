@@ -29,8 +29,10 @@ import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Dictionary;
+import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
@@ -47,6 +49,7 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
     private boolean IsPublic;
     private boolean IsPrivate;
     private boolean IsEverybodyAllowed;
+    private boolean HasHiddenSwimlanes = false;
     private Date StartDate;
     private Date EndDate;
     private Date LastModified;
@@ -107,7 +110,11 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
         if (urls != null) {
             ListURL = new URL(urls.optString("list"));
             BoardURL = new URL(urls.optString("board"));
-            CalendarURL = new URL(urls.optString("calendar"));
+            if (urls.has("calendar")) {
+                CalendarURL = new URL(urls.optString("calendar"));
+            } else {
+                CalendarURL = null;
+            }
         } else {
             ListURL = null;
             BoardURL = null;
@@ -163,7 +170,13 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
                 KanboardTask tmpActiveTask = new KanboardTask(activetasks.optJSONObject(i));
                 TaskHashtable.put(tmpActiveTask.getId(), tmpActiveTask);
                 ActiveTasks.add(tmpActiveTask);
-                GroupedActiveTasks.get(tmpActiveTask.getColumnId()).get(tmpActiveTask.getSwimlaneId()).add(tmpActiveTask);
+                if (Swimlanes.size() > 0) {
+                    if (((Hashtable<Integer, List<KanboardTask>>) GroupedActiveTasks.get(tmpActiveTask.getColumnId())).containsKey(tmpActiveTask.getSwimlaneId())) {
+                        GroupedActiveTasks.get(tmpActiveTask.getColumnId()).get(tmpActiveTask.getSwimlaneId()).add(tmpActiveTask);
+                    } else {
+                        HasHiddenSwimlanes = true;
+                    }
+                }
             }
 
         InactiveTasks = new ArrayList<>();
@@ -172,7 +185,13 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
                 KanboardTask tmpInactiveTask = new KanboardTask(inactivetasks.optJSONObject(i));
                 TaskHashtable.put(tmpInactiveTask.getId(), tmpInactiveTask);
                 InactiveTasks.add(tmpInactiveTask);
-                GroupedInactiveTasks.get(tmpInactiveTask.getSwimlaneId()).add(tmpInactiveTask);
+                if (Swimlanes.size() > 0) {
+                    if (((Hashtable<Integer, List<KanboardTask>>) GroupedInactiveTasks).containsKey(tmpInactiveTask.getSwimlaneId())) {
+                        GroupedInactiveTasks.get(tmpInactiveTask.getSwimlaneId()).add(tmpInactiveTask);
+                    } else {
+                        HasHiddenSwimlanes = true;
+                    }
+                }
             }
 
         OverdueTasks = new ArrayList<>();
@@ -180,7 +199,13 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
             for (int i = 0; i < overduetasks.length(); i++) {
                 KanboardTask tmpOverdueTask = new KanboardTask(overduetasks.optJSONObject(i));
                 OverdueTasks.add(TaskHashtable.get(tmpOverdueTask.getId()));
-                GroupedOverdueTasks.get(TaskHashtable.get(tmpOverdueTask.getId()).getSwimlaneId()).add(TaskHashtable.get(tmpOverdueTask.getId()));
+                if (Swimlanes.size() > 0) {
+                    if (((Hashtable<Integer, List<KanboardTask>>) GroupedOverdueTasks).containsKey(tmpOverdueTask.getSwimlaneId())) {
+                        GroupedOverdueTasks.get(TaskHashtable.get(tmpOverdueTask.getId()).getSwimlaneId()).add(TaskHashtable.get(tmpOverdueTask.getId()));
+                    } else {
+                        HasHiddenSwimlanes = true;
+                    }
+                }
             }
 
         ProjectUsers = new Hashtable<>();
@@ -207,22 +232,52 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
             }
             GroupedActiveTasks.put(col.getId(), tmpTable);
         }
+
         Categories = categories;
         for (KanboardCategory cat: Categories)
             CategoryHashtable.put(cat.getId(), cat);
+
         ActiveTasks = activetasks;
+        Collections.sort(ActiveTasks);
         for (KanboardTask task: ActiveTasks) {
-            GroupedActiveTasks.get(task.getColumnId()).get(task.getSwimlaneId()).add(task);
+            if (Swimlanes.size() > 0) {
+                if (((Hashtable<Integer, List<KanboardTask>>) GroupedActiveTasks.get(task.getColumnId())).containsKey(task.getSwimlaneId())) {
+                    GroupedActiveTasks.get(task.getColumnId()).get(task.getSwimlaneId()).add(task);
+                } else {
+                    HasHiddenSwimlanes = true;
+                }
+            }
             TaskHashtable.put(task.getId(), task);
         }
+
         InactiveTasks = inactivetasks;
+        Collections.sort(InactiveTasks);
         for (KanboardTask task: InactiveTasks) {
-            GroupedInactiveTasks.get(task.getSwimlaneId()).add(task);
+            if (Swimlanes.size() > 0) {
+                if (((Hashtable<Integer, List<KanboardTask>>) GroupedInactiveTasks).containsKey(task.getSwimlaneId())) {
+                    GroupedInactiveTasks.get(task.getSwimlaneId()).add(task);
+                } else {
+                    HasHiddenSwimlanes = true;
+                }
+            }
             TaskHashtable.put(task.getId(), task);
         }
+
         for (KanboardTask task: overduetasks) {
             OverdueTasks.add(TaskHashtable.get(task.getId()));
-            GroupedOverdueTasks.get(TaskHashtable.get(task.getId()).getSwimlaneId()).add(TaskHashtable.get(task.getId()));
+            if (Swimlanes.size() > 0) {
+                if (((Hashtable<Integer, List<KanboardTask>>) GroupedOverdueTasks).containsKey(task.getSwimlaneId())) {
+                    GroupedOverdueTasks.get(TaskHashtable.get(task.getId()).getSwimlaneId()).add(TaskHashtable.get(task.getId()));
+                } else {
+                    HasHiddenSwimlanes = true;
+                }
+            }
+        }
+        Collections.sort(OverdueTasks);
+        Enumeration<Integer> enumSwimlanes = GroupedOverdueTasks.keys();
+        while (enumSwimlanes.hasMoreElements()) {
+            Integer swimKey = enumSwimlanes.nextElement();
+            Collections.sort(GroupedOverdueTasks.get(swimKey));
         }
         ProjectUsers = projectusers;
     }
@@ -333,6 +388,10 @@ public class KanboardProject implements Comparable<KanboardProject>, Serializabl
     @NonNull
     public List<KanboardTask> getInactiveTasks() {
         return InactiveTasks;
+    }
+
+    public boolean hasHiddenSwimlanes() {
+        return HasHiddenSwimlanes;
     }
 
     @NonNull

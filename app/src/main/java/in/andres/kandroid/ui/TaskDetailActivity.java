@@ -67,6 +67,7 @@ import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.NodeRenderer;
@@ -89,12 +90,14 @@ import java.util.Locale;
 import in.andres.kandroid.BuildConfig;
 import in.andres.kandroid.CompactHtmlRenderer;
 import in.andres.kandroid.Constants;
+import in.andres.kandroid.DownloadIntentService;
 import in.andres.kandroid.R;
 import in.andres.kandroid.Utils;
 import in.andres.kandroid.kanboard.KanboardAPI;
 import in.andres.kandroid.kanboard.KanboardCategory;
 import in.andres.kandroid.kanboard.KanboardColumn;
 import in.andres.kandroid.kanboard.KanboardComment;
+import in.andres.kandroid.kanboard.KanboardRequest;
 import in.andres.kandroid.kanboard.KanboardSubtask;
 import in.andres.kandroid.kanboard.KanboardSwimlane;
 import in.andres.kandroid.kanboard.KanboardTask;
@@ -104,13 +107,16 @@ import in.andres.kandroid.kanboard.events.OnCloseTaskListener;
 import in.andres.kandroid.kanboard.events.OnCreateCommentListener;
 import in.andres.kandroid.kanboard.events.OnCreateSubtaskListener;
 import in.andres.kandroid.kanboard.events.OnDownloadTaskFileListener;
+import in.andres.kandroid.kanboard.events.OnGetActiveSwimlanesListener;
 import in.andres.kandroid.kanboard.events.OnGetAllCommentsListener;
 import in.andres.kandroid.kanboard.events.OnGetAllSubtasksListener;
 import in.andres.kandroid.kanboard.events.OnGetAllTaskFilesListener;
 import in.andres.kandroid.kanboard.events.OnGetCategoryListener;
+import in.andres.kandroid.kanboard.events.OnGetColumnsListener;
 import in.andres.kandroid.kanboard.events.OnGetProjectUsersListener;
 import in.andres.kandroid.kanboard.events.OnGetSwimlaneListener;
 import in.andres.kandroid.kanboard.events.OnGetTaskListener;
+import in.andres.kandroid.kanboard.events.OnMoveTaskPositionListener;
 import in.andres.kandroid.kanboard.events.OnOpenTaskListener;
 import in.andres.kandroid.kanboard.events.OnRemoveCommentListener;
 import in.andres.kandroid.kanboard.events.OnRemoveSubtaskListener;
@@ -126,11 +132,15 @@ public class TaskDetailActivity extends AppCompatActivity {
     private KanboardSwimlane swimlane;
     private KanboardColumn column;
     private KanboardUserInfo me;
-    private List<KanboardComment> comments;
-    private List<KanboardSubtask> subtasks;
-    private List<KanboardTaskFile> files;
+    private List<KanboardComment> comments = new ArrayList<>();
+    private List<KanboardSubtask> subtasks = new ArrayList<>();
+    private List<KanboardTaskFile> files = new ArrayList<>();
+    private List<KanboardColumn> projectColumns;
+    private List<KanboardSwimlane> projectSwimlanes;
     private Dictionary<Integer, String> users;
     private Hashtable<Integer, Double> hasTimer = new Hashtable<>();
+    private int downloadFileId = -1;
+    private String downloadFileName = null;
 //    private HashSet<Integer> hasTimer = new HashSet<>();
     private MenuItem refreshAction;
     private MenuItem opencloseAction;
@@ -152,12 +162,13 @@ public class TaskDetailActivity extends AppCompatActivity {
         @Override
         public void onGetAllComments(boolean success, List<KanboardComment> result) {
             hideProgress();
-            if (success && result.size() > 0) {
+            hideCommentProgress();
+            if (success && result.size() >= 0) {
                 comments = result;
-                commentListview.setAdapter(new CommentAdapter (getBaseContext(), comments));
-                findViewById(R.id.card_comments).setVisibility(View.VISIBLE);
+                commentListview.setAdapter(new CommentAdapter (getBaseContext(), comments, true));
+//                findViewById(R.id.card_comments).setVisibility(View.VISIBLE);
             } else {
-                findViewById(R.id.card_comments).setVisibility(View.GONE);
+//                findViewById(R.id.card_comments).setVisibility(View.GONE);
             }
         }
     };
@@ -235,10 +246,11 @@ public class TaskDetailActivity extends AppCompatActivity {
         @Override
         public void onGetAllSubtasks(boolean success, List<KanboardSubtask> result) {
             hideProgress();
+            hideSubtaskProgress();
             if (success && result.size() > 0) {
                 subtasks = result;
-                subtaskListview.setAdapter(new SubtaskAdapter(getBaseContext(), subtasks));
-                findViewById(R.id.card_subtasks).setVisibility(View.VISIBLE);
+                subtaskListview.setAdapter(new SubtaskAdapter(getBaseContext(), subtasks, true));
+//                findViewById(R.id.card_subtasks).setVisibility(View.VISIBLE);
                 for (final KanboardSubtask sub: subtasks) {
                     kanboardAPI.hasSubtaskTimer(sub.getId(), me.getId(), new OnSubtaskTimetrackingListener() {
                         @Override
@@ -261,7 +273,7 @@ public class TaskDetailActivity extends AppCompatActivity {
                     });
                 }
             } else {
-                findViewById(R.id.card_subtasks).setVisibility(View.GONE);
+//                findViewById(R.id.card_subtasks).setVisibility(View.GONE);
             }
         }
     };
@@ -361,12 +373,13 @@ public class TaskDetailActivity extends AppCompatActivity {
         @Override
         public void onGetAllTaskFiles(boolean success, List<KanboardTaskFile> result) {
             hideProgress();
+            hideFilesProgress();
             if (success && result.size() > 0) {
-                findViewById(R.id.card_files).setVisibility(View.VISIBLE);
+//                findViewById(R.id.card_files).setVisibility(View.VISIBLE);
                 files = result;
                 filesListview.setAdapter(new TaskFilesAdapter(getBaseContext(), files));
             } else {
-                findViewById(R.id.card_files).setVisibility(View.GONE);
+//                findViewById(R.id.card_files).setVisibility(View.GONE);
             }
         }
     };
@@ -413,6 +426,35 @@ public class TaskDetailActivity extends AppCompatActivity {
                 }
             } else {
                 Snackbar.make(findViewById(R.id.root_layout), "Unable to download file", Snackbar.LENGTH_LONG).show();
+            }
+        }
+    };
+    private OnGetColumnsListener getColumnsListener = new OnGetColumnsListener() {
+        @Override
+        public void onGetColumns(boolean success, List<KanboardColumn> result) {
+            hideProgress();
+            if (success) {
+                projectColumns = result;
+            } else {
+                Snackbar.make(findViewById(R.id.root_layout), "Error while receiving project columns", Snackbar.LENGTH_LONG).show();
+            }
+        }
+    };
+    private OnMoveTaskPositionListener moveTaskPositionListener = new OnMoveTaskPositionListener() {
+        @Override
+        public void onMoveTaskPosition(boolean success) {
+            if (success)
+                refresh();
+            else
+                Snackbar.make(findViewById(R.id.root_layout), "Error while moving task", Snackbar.LENGTH_LONG).show();
+        }
+    };
+    private OnGetActiveSwimlanesListener getActiveSwimlanesListener = new OnGetActiveSwimlanesListener() {
+        @Override
+        public void onGetActiveSwimlanes(boolean success, List<KanboardSwimlane> result) {
+            hideProgress();
+            if (success) {
+                projectSwimlanes = result;
             }
         }
     };
@@ -463,9 +505,9 @@ public class TaskDetailActivity extends AppCompatActivity {
         self = this;
 
         findViewById(R.id.card_description).setVisibility(View.GONE);
-        findViewById(R.id.card_subtasks).setVisibility(View.GONE);
-        findViewById(R.id.card_comments).setVisibility(View.GONE);
-        findViewById(R.id.card_files).setVisibility(View.GONE);
+//        findViewById(R.id.card_subtasks).setVisibility(View.GONE);
+//        findViewById(R.id.card_comments).setVisibility(View.GONE);
+//        findViewById(R.id.card_files).setVisibility(View.GONE);
 
         textCategory = (TextView) findViewById(R.id.text_category);
         textStatus = (TextView) findViewById(R.id.text_status);
@@ -487,13 +529,33 @@ public class TaskDetailActivity extends AppCompatActivity {
         textDescription.setMovementMethod(LinkMovementMethod.getInstance());
 
         commentListview = (ListView) findViewById(R.id.comment_listview);
+        commentListview.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position >= comments.size() && !progressVisible) {
+                    showCommentDialog(null);
+                }
+            }
+        });
         registerForContextMenu(commentListview);
 
         subtaskListview = (ListView) findViewById(R.id.subtask_listview);
+        subtaskListview.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position >= subtasks.size() && !progressVisible) {
+                    showSubtaskDialog(null);
+                }
+            }
+        });
         registerForContextMenu(subtaskListview);
 
         filesListview = (ListView) findViewById(R.id.files_listview);
         registerForContextMenu(filesListview);
+
+        showCommentProgress();
+        showSubtaskProgress();
+        showFilesProgress();
 
         fabMenu = (FloatingActionButton) findViewById(R.id.fab);
         fabMenuButtonRemoveTask = (FloatingActionButton) findViewById(R.id.fab_menu_button_remove_task);
@@ -580,6 +642,10 @@ public class TaskDetailActivity extends AppCompatActivity {
             }
         });
 
+        commentListview.setAdapter(new CommentAdapter (getBaseContext(), comments, true));
+        subtaskListview.setAdapter(new SubtaskAdapter(getBaseContext(), subtasks, true));
+        filesListview.setAdapter((new TaskFilesAdapter(getBaseContext(), files)));
+
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this.getBaseContext());
         try {
             kanboardAPI = new KanboardAPI(preferences.getString("serverurl", ""), preferences.getString("username", ""), preferences.getString("password", ""));
@@ -602,6 +668,9 @@ public class TaskDetailActivity extends AppCompatActivity {
             kanboardAPI.addOnGetAllTaskFilesListListeners(getAllTaskFilesListener);
             kanboardAPI.addOnRemoveTaskFileListeners(removeTaskFileListener);
             kanboardAPI.addOnDownloadTaskFileListeners(downloadTaskFileListener);
+            kanboardAPI.addOnGetColumnsListener(getColumnsListener);
+            kanboardAPI.addOnMoveTaskPositionListener(moveTaskPositionListener);
+            kanboardAPI.addOnGetActiveSwimlanesListener(getActiveSwimlanesListener);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -655,6 +724,8 @@ public class TaskDetailActivity extends AppCompatActivity {
         outState.putSerializable("comments", (ArrayList<KanboardComment>) comments);
         outState.putSerializable("subtasks", (ArrayList<KanboardSubtask>) subtasks);
         outState.putSerializable("files", (ArrayList<KanboardTaskFile>) files);
+        outState.putSerializable("projectColumns", (ArrayList<KanboardColumn>) projectColumns);
+        outState.putSerializable("projectSwimlanes", (ArrayList<KanboardSwimlane>) projectSwimlanes);
 
         if (BuildConfig.DEBUG) Log.d(Constants.TAG, "TaskDetailActivity: saved savedInstanceState");
     }
@@ -669,11 +740,13 @@ public class TaskDetailActivity extends AppCompatActivity {
     public void onCreateContextMenu(ContextMenu menu, View v, ContextMenu.ContextMenuInfo menuInfo) {
         super.onCreateContextMenu(menu, v, menuInfo);
         if (v.getId() == R.id.comment_listview) {
-            menu.setHeaderTitle(getString(R.string.menu_caption_comment,
-                    ((KanboardComment)commentListview.getAdapter().getItem(((AdapterView.AdapterContextMenuInfo)menuInfo).position)).getId()
-            ));
-            MenuInflater inflater = getMenuInflater();
-            inflater.inflate(R.menu.activity_taskdetail_context_comment, menu);
+            if (((AdapterView.AdapterContextMenuInfo)menuInfo).position < comments.size()) {
+                menu.setHeaderTitle(getString(R.string.menu_caption_comment,
+                        ((KanboardComment) commentListview.getAdapter().getItem(((AdapterView.AdapterContextMenuInfo) menuInfo).position)).getId()
+                ));
+                MenuInflater inflater = getMenuInflater();
+                inflater.inflate(R.menu.activity_taskdetail_context_comment, menu);
+            }
         }
         if (v.getId() == R.id.subtask_listview) {
             menu.setHeaderTitle(getString(R.string.menu_caption_subtask,
@@ -708,26 +781,22 @@ public class TaskDetailActivity extends AppCompatActivity {
                 showDeleteSubtaskDialog((KanboardSubtask)subtaskListview.getAdapter().getItem(info.position));
                 return true;
             case R.id.action_download_file:
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-                    kanboardAPI.downloadTaskFile(((KanboardTaskFile) filesListview.getAdapter().getItem(info.position)).getId());
-                    Snackbar.make(findViewById(R.id.root_layout), "Starting download", Snackbar.LENGTH_LONG).show();
+                String state = Environment.getExternalStorageState();
+                if (Environment.MEDIA_MOUNTED.equals(state)) {
+                    downloadFileId = ((KanboardTaskFile) filesListview.getAdapter().getItem(info.position)).getId();
+                    downloadFileName = ((KanboardTaskFile) filesListview.getAdapter().getItem(info.position)).getName();
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+                        Intent downloadIntent = new Intent(this, DownloadIntentService.class);
+                        downloadIntent.putExtra("request", KanboardRequest.downloadTaskFile(downloadFileId).JSON[0]);
+                        downloadIntent.putExtra("filename", downloadFileName);
+                        startService(downloadIntent);
+                    } else {
+                        ActivityCompat.requestPermissions((Activity) self,
+                                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                                Constants.RequestStoragePermission);
+                    }
                 } else {
-//                    if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-//                        new AlertDialog.Builder(this)
-//                                .setMessage("jahksedgrfkjashdgf")
-//                                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-//                                    @Override
-//                                    public void onClick(DialogInterface dialog, int which) {
-//                                        ActivityCompat.requestPermissions((Activity) self,
-//                                                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-//                                                25);
-//                                    }
-//                                }).show();
-//                    }
-                    ActivityCompat.requestPermissions((Activity) self,
-                            new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                            Constants.RequestStoragePermission);
-
+                    Snackbar.make(findViewById(R.id.root_layout), getString(R.string.error_no_sdcard), Snackbar.LENGTH_LONG).show();
                 }
                 return true;
             case R.id.action_delete_file:
@@ -743,11 +812,19 @@ public class TaskDetailActivity extends AppCompatActivity {
         switch (requestCode) {
             case Constants.RequestStoragePermission:
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    Snackbar.make(findViewById(R.id.root_layout), "Storage permission was granted, please start the download again.", Snackbar.LENGTH_LONG).show();
+                    if (downloadFileId != -1) {
+                        Intent downloadIntent = new Intent(this, DownloadIntentService.class);
+                        downloadIntent.putExtra("request", KanboardRequest.downloadTaskFile(downloadFileId).JSON[0]);
+                        downloadIntent.putExtra("filename", downloadFileName);
+                        startService(downloadIntent);
+                        downloadFileId = -1;
+                        downloadFileName = null;
+                    } else {
+                        Snackbar.make(findViewById(R.id.root_layout), getString(R.string.permission_storage_granted), Snackbar.LENGTH_LONG).show();
+                    }
                 } else {
-                    Snackbar.make(findViewById(R.id.root_layout), "Storage permission was denied.", Snackbar.LENGTH_LONG).show();
+                    Snackbar.make(findViewById(R.id.root_layout), getString(R.string.permission_storage_denied), Snackbar.LENGTH_LONG).show();
                 }
-                return;
         }
     }
 
@@ -782,16 +859,34 @@ public class TaskDetailActivity extends AppCompatActivity {
                 refresh();
                 return true;
             case R.id.action_new_comment:
-                showCommentDialog(null);
+                if (progressVisible)
+                    Toast.makeText(this, getString(R.string.toast_wait_loading), Toast.LENGTH_SHORT).show();
+                else
+                    showCommentDialog(null);
                 return true;
             case R.id.action_new_subtask:
-                showSubtaskDialog(null);
+                if (progressVisible)
+                    Toast.makeText(this, getString(R.string.toast_wait_loading), Toast.LENGTH_SHORT).show();
+                else
+                    showSubtaskDialog(null);
                 return true;
             case R.id.action_edit_task:
                 Intent intent = new Intent(getBaseContext(), TaskEditActivity.class);
                 intent.putExtra("task", task);
                 intent.putExtra("projectusers", (Hashtable<Integer, String>)users);
                 startActivityForResult(intent, Constants.RequestEditTask);
+                return true;
+            case R.id.action_change_column:
+                if (progressVisible)
+                    Toast.makeText(this, getString(R.string.toast_wait_loading), Toast.LENGTH_SHORT).show();
+                else
+                    showChangeColumnDialog();
+                return true;
+            case R.id.action_change_swimlane:
+                if (progressVisible)
+                    Toast.makeText(this, getString(R.string.toast_wait_loading), Toast.LENGTH_SHORT).show();
+                else
+                    showChangeSwimlaneDialog();
                 return true;
             case R.id.action_close_task:
                 setResult(Constants.ResultChanged);
@@ -831,31 +926,36 @@ public class TaskDetailActivity extends AppCompatActivity {
         comments = (ArrayList<KanboardComment>) savedInstanceState.getSerializable("comments");
         subtasks = (ArrayList<KanboardSubtask>) savedInstanceState.getSerializable("subtasks");
         files = (ArrayList<KanboardTaskFile>) savedInstanceState.getSerializable("files");
+        projectColumns = (ArrayList<KanboardColumn>) savedInstanceState.getSerializable("projectColumns");
+        projectSwimlanes = (ArrayList<KanboardSwimlane>) savedInstanceState.getSerializable("projectSwimlanes");
 
         setTaskDetails();
         setCategoryDetails();
         setSwimlaneDetails(swimlane.getName());
 
         if (comments != null) {
-            commentListview.setAdapter(new CommentAdapter (getBaseContext(), comments));
-            findViewById(R.id.card_comments).setVisibility(View.VISIBLE);
+            commentListview.setAdapter(new CommentAdapter (getBaseContext(), comments, true));
+            hideCommentProgress();
+//            findViewById(R.id.card_comments).setVisibility(View.VISIBLE);
         } else {
-            findViewById(R.id.card_comments).setVisibility(View.GONE);
+//            findViewById(R.id.card_comments).setVisibility(View.GONE);
         }
 
         if (subtasks != null) {
-            subtaskListview.setAdapter(new SubtaskAdapter(getBaseContext(), subtasks));
-            findViewById(R.id.card_subtasks).setVisibility(View.VISIBLE);
+            subtaskListview.setAdapter(new SubtaskAdapter(getBaseContext(), subtasks, true));
+            hideSubtaskProgress();
+//            findViewById(R.id.card_subtasks).setVisibility(View.VISIBLE);
         } else {
-            findViewById(R.id.card_subtasks).setVisibility(View.GONE);
+//            findViewById(R.id.card_subtasks).setVisibility(View.GONE);
         }
 
         if (files != null) {
             filesListview.setAdapter(new TaskFilesAdapter(getBaseContext(), files));
-            findViewById(R.id.card_files).setVisibility(View.VISIBLE);
+            hideFilesProgress();
+//            findViewById(R.id.card_files).setVisibility(View.VISIBLE);
             Log.d(Constants.TAG, "restore files");
         } else {
-            findViewById(R.id.card_files).setVisibility(View.GONE);
+//            findViewById(R.id.card_files).setVisibility(View.GONE);
             Log.d(Constants.TAG, "no files");
         }
 
@@ -913,6 +1013,36 @@ public class TaskDetailActivity extends AppCompatActivity {
         }
     }
 
+    private void showCommentProgress() {
+        commentListview.setVisibility(View.GONE);
+        findViewById(R.id.commentProgress).setVisibility(View.VISIBLE);
+    }
+
+    private void hideCommentProgress() {
+        commentListview.setVisibility(View.VISIBLE);
+        findViewById(R.id.commentProgress).setVisibility(View.GONE);
+    }
+
+    private void showSubtaskProgress() {
+        subtaskListview.setVisibility(View.GONE);
+        findViewById(R.id.subtaskProgress).setVisibility(View.VISIBLE);
+    }
+
+    private void hideSubtaskProgress() {
+        subtaskListview.setVisibility(View.VISIBLE);
+        findViewById(R.id.subtaskProgress).setVisibility(View.GONE);
+    }
+
+    private void showFilesProgress() {
+        filesListview.setVisibility(View.GONE);
+        findViewById(R.id.filesProgress).setVisibility(View.VISIBLE);
+    }
+
+    private void hideFilesProgress() {
+        filesListview.setVisibility(View.VISIBLE);
+        findViewById(R.id.filesProgress).setVisibility(View.GONE);
+    }
+
     private void refresh() {
         Log.i(Constants.TAG, "Loading task data.");
         showProgress();
@@ -921,10 +1051,17 @@ public class TaskDetailActivity extends AppCompatActivity {
         kanboardAPI.getProjectUsers(task.getProjectId());
         showProgress();
         kanboardAPI.getAllComments(task.getId());
+        showCommentProgress();
         showProgress();
         kanboardAPI.getAllSubtasks(task.getId());
+        showSubtaskProgress();
         showProgress();
         kanboardAPI.getAllTaskFiles(task.getId());
+        showFilesProgress();
+        showProgress();
+        kanboardAPI.getColumns(task.getProjectId());
+        showProgress();
+        kanboardAPI.getActiveSwimlanes(task.getProjectId());
     }
 
     private void showCommentDialog(@Nullable final KanboardComment comment) {
@@ -1000,6 +1137,68 @@ public class TaskDetailActivity extends AppCompatActivity {
                     }
                     dialog.dismiss();
                 }
+            }
+        });
+        builder.setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.cancel();
+            }
+        });
+        builder.show();
+    }
+
+    private void showChangeColumnDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(self);
+        builder.setTitle(getText(R.string.taskview_fab_change_column));
+        final Spinner input = new Spinner(this);
+        ArrayAdapter<KanboardColumn> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, projectColumns);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        input.setAdapter(adapter);
+        for (int i = 0; i < projectColumns.size(); i++) {
+            if (projectColumns.get(i).getId() == task.getColumnId()) {
+                input.setSelection(i);
+                break;
+            }
+        }
+        builder.setView(input);
+        builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                setResult(Constants.ResultChanged);
+                kanboardAPI.moveTaskPosition(task.getProjectId(), task.getId(), ((KanboardColumn)input.getSelectedItem()).getId(), 1, task.getSwimlaneId());
+                dialog.dismiss();
+            }
+        });
+        builder.setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.cancel();
+            }
+        });
+        builder.show();
+    }
+
+    private void showChangeSwimlaneDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(self);
+        builder.setTitle(getText(R.string.taskview_fab_change_swimlane));
+        final Spinner input = new Spinner(this);
+        ArrayAdapter<KanboardSwimlane> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, projectSwimlanes);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        input.setAdapter(adapter);
+        for (int i = 0; i < projectSwimlanes.size(); i++) {
+            if (projectSwimlanes.get(i).getId() == task.getSwimlaneId()) {
+                input.setSelection(i);
+                break;
+            }
+        }
+        builder.setView(input);
+        builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                setResult(Constants.ResultChanged);
+                kanboardAPI.moveTaskPosition(task.getProjectId(), task.getId(), task.getColumnId(), 1, ((KanboardSwimlane)input.getSelectedItem()).getId());
+                dialog.dismiss();
             }
         });
         builder.setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
@@ -1169,90 +1368,100 @@ public class TaskDetailActivity extends AppCompatActivity {
     private class SubtaskAdapter extends ArrayAdapter<KanboardSubtask> {
         private Context mContext;
         private LayoutInflater mInflater;
-        List<KanboardSubtask> mObjects;
+        private List<KanboardSubtask> mObjects;
+        private boolean mShowAdd = false;
 
-        public SubtaskAdapter(Context context, List<KanboardSubtask> objects) {
+        public SubtaskAdapter(Context context, List<KanboardSubtask> objects, boolean showAdd) {
             super(context, R.layout.listitem_subtask, objects);
             mContext = context;
             mInflater = (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
             mObjects = objects;
+            mShowAdd = showAdd;
+        }
 
+        @Override
+        public int getCount() {
+            return mObjects.size() + (mShowAdd ? 1 : 0);
         }
 
         @NonNull
         @Override
         public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-            if (convertView == null) {
+            if (position < getCount() - (mShowAdd ? 1 : 0)) {
                 convertView = mInflater.inflate(R.layout.listitem_subtask, parent, false);
                 convertView.setLongClickable(true);
-            }
 
-            TextView text = (TextView) convertView.findViewById(android.R.id.text1);
-            CheckBox check = (CheckBox) convertView.findViewById(android.R.id.checkbox);
-            Switch toggle = (Switch) convertView.findViewById(R.id.buttonToggle);
+                TextView text = (TextView) convertView.findViewById(android.R.id.text1);
+                CheckBox check = (CheckBox) convertView.findViewById(android.R.id.checkbox);
+                Switch toggle = (Switch) convertView.findViewById(R.id.buttonToggle);
 
-            // Use tag to save list position
-            toggle.setTag(position);
-            check.setTag(position);
+                // Use tag to save list position
+                toggle.setTag(position);
+                check.setTag(position);
 
-            final OnSubtaskTimetrackingListener startTimer = new OnSubtaskTimetrackingListener() {
-                @Override
-                public void onSubtaskTimetracking(boolean result, double time) {
-                }
-            };
-            final OnSubtaskTimetrackingListener stopTimer = new OnSubtaskTimetrackingListener() {
-                @Override
-                public void onSubtaskTimetracking(boolean result, double time) {
-                }
-            };
-            View.OnClickListener toggleClick = new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    if (((Switch) v).isChecked()) {
-                        kanboardAPI.setSubtaskStartTime(mObjects.get((int) v.getTag()).getId(), me.getId(), startTimer);
-                    } else {
-                        kanboardAPI.setSubtaskEndTime(mObjects.get((int) v.getTag()).getId(), me.getId(), stopTimer);
+                final OnSubtaskTimetrackingListener startTimer = new OnSubtaskTimetrackingListener() {
+                    @Override
+                    public void onSubtaskTimetracking(boolean result, double time) {
                     }
+                };
+                final OnSubtaskTimetrackingListener stopTimer = new OnSubtaskTimetrackingListener() {
+                    @Override
+                    public void onSubtaskTimetracking(boolean result, double time) {
+                    }
+                };
+                View.OnClickListener toggleClick = new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (((Switch) v).isChecked()) {
+                            kanboardAPI.setSubtaskStartTime(mObjects.get((int) v.getTag()).getId(), me.getId(), startTimer);
+                        } else {
+                            kanboardAPI.setSubtaskEndTime(mObjects.get((int) v.getTag()).getId(), me.getId(), stopTimer);
+                        }
+                    }
+                };
+
+                toggle.setOnClickListener(toggleClick);
+                check.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (((CheckBox) v).isChecked())
+                            kanboardAPI.updateSubtask(mObjects.get((int) v.getTag()).getId(), mObjects.get((int) v.getTag()).getTaskId(), null, null, null, null, 2);
+                        else
+                            kanboardAPI.updateSubtask(mObjects.get((int) v.getTag()).getId(), mObjects.get((int) v.getTag()).getTaskId(), null, null, null, null, 0);
+                    }
+                });
+
+                if (mObjects.get(position).getUserId() == me.getId())
+                    toggle.setEnabled(true);
+                else
+                    toggle.setEnabled(false);
+
+                double timer = 0;
+                if (hasTimer.containsKey(mObjects.get(position).getId())) {
+                    toggle.setChecked(true);
+                    timer = hasTimer.get(mObjects.get(position).getId());
+                } else
+                    toggle.setChecked(false);
+
+                if (mObjects.get(position).getStatus() == 2) {
+                    text.setText(Utils.fromHtml(String.format(Locale.getDefault(), "<del>%s</del>", mObjects.get(position).getTitle())));
+                    check.setChecked(true);
+                } else if (mObjects.get(position).getStatus() == 1) {
+                    text.setText(Utils.fromHtml(String.format(Locale.getDefault(), "<b>%s</b>", mObjects.get(position).getTitle())));
+                    check.setChecked(false);
+                } else {
+                    text.setText(mObjects.get(position).getTitle());
+                    check.setChecked(false);
                 }
-            };
 
-            toggle.setOnClickListener(toggleClick);
-            check.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    if (((CheckBox) v).isChecked())
-                        kanboardAPI.updateSubtask(mObjects.get((int) v.getTag()).getId(), mObjects.get((int) v.getTag()).getTaskId(), null, null, null, null, 2);
-                    else
-                        kanboardAPI.updateSubtask(mObjects.get((int) v.getTag()).getId(), mObjects.get((int) v.getTag()).getTaskId(), null, null, null, null, 0);
-                }
-            });
+                text.setSelected(true);
 
-            if (mObjects.get(position).getUserId() == me.getId())
-                toggle.setEnabled(true);
-            else
-                toggle.setEnabled(false);
-
-            double timer = 0;
-            if (hasTimer.containsKey(mObjects.get(position).getId())) {
-                toggle.setChecked(true);
-                timer = hasTimer.get(mObjects.get(position).getId());
-            } else
-                toggle.setChecked(false);
-
-            if (mObjects.get(position).getStatus() == 2) {
-                text.setText(Utils.fromHtml(String.format(Locale.getDefault(), "<del>%s</del>", mObjects.get(position).getTitle())));
-                check.setChecked(true);
-            } else if (mObjects.get(position).getStatus() == 1) {
-                text.setText(Utils.fromHtml(String.format(Locale.getDefault(), "<b>%s</b>", mObjects.get(position).getTitle())));
-                check.setChecked(false);
+                ((TextView) convertView.findViewById(android.R.id.text2)).setText(String.format(Locale.getDefault(), "%.2fh", mObjects.get(position).getTimeSpent() + timer));
             } else {
-                text.setText(mObjects.get(position).getTitle());
-                check.setChecked(false);
+                convertView = mInflater.inflate(android.R.layout.simple_list_item_1, parent, false);
+                ((TextView) convertView.findViewById(android.R.id.text1)).setText(getString(R.string.taskview_fab_new_subtask));
+                ((TextView) convertView.findViewById(android.R.id.text1)).setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
             }
-
-            text.setSelected(true);
-
-            ((TextView) convertView.findViewById(android.R.id.text2)).setText(String.format(Locale.getDefault(), "%.2fh", mObjects.get(position).getTimeSpent() + timer));
 
             return convertView;
         }
@@ -1261,27 +1470,36 @@ public class TaskDetailActivity extends AppCompatActivity {
     private class CommentAdapter extends ArrayAdapter<KanboardComment> {
         private Context mContext;
         private LayoutInflater mInflater;
-        List<KanboardComment> mObjects;
+        private List<KanboardComment> mObjects;
+        private boolean mShowAdd = false;
 
-        public CommentAdapter(Context context, List<KanboardComment> objects) {
+        public CommentAdapter(Context context, List<KanboardComment> objects, boolean showAdd) {
             super(context, R.layout.listitem_comment, objects);
             mContext = context;
             mInflater = (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
             mObjects = objects;
+            mShowAdd = showAdd;
+        }
 
+        @Override
+        public int getCount() {
+            return mObjects.size() + (mShowAdd ? 1 : 0);
         }
 
         @NonNull
         @Override
         public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-            if (convertView == null) {
+            if (position < getCount() - (mShowAdd ? 1 : 0)) {
                 convertView = mInflater.inflate(R.layout.listitem_comment, parent, false);
                 convertView.setLongClickable(true);
+                ((TextView) convertView.findViewById(R.id.username)).setText(Utils.fromHtml(String.format("<small>%s</small>", users == null ? mObjects.get(position).getUsername() : users.get(mObjects.get(position).getUserId()))));
+                ((TextView) convertView.findViewById(R.id.date)).setText(Utils.fromHtml(String.format("<small>%tF</small>", mObjects.get(position).getDateModification())));
+                ((TextView) convertView.findViewById(R.id.comment)).setText(Utils.fromHtml(mRenderer.render(mParser.parse(mObjects.get(position).getContent()))));
+            } else {
+                convertView = mInflater.inflate(android.R.layout.simple_list_item_1, parent, false);
+                ((TextView) convertView.findViewById(android.R.id.text1)).setText(getString(R.string.taskview_fab_new_comment));
+                ((TextView) convertView.findViewById(android.R.id.text1)).setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
             }
-
-            ((TextView) convertView.findViewById(R.id.username)).setText(Utils.fromHtml(String.format("<small>%s</small>", users == null ? mObjects.get(position).getUsername() : users.get(mObjects.get(position).getUserId()))));
-            ((TextView) convertView.findViewById(R.id.date)).setText(Utils.fromHtml(String.format("<small>%tF</small>", mObjects.get(position).getDateModification())));
-            ((TextView) convertView.findViewById(R.id.comment)).setText(Utils.fromHtml(mRenderer.render(mParser.parse(mObjects.get(position).getContent()))));
 
             return convertView;
         }

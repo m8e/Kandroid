@@ -26,6 +26,7 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.util.Log;
 
+import org.acra.ACRA;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -42,7 +43,11 @@ import java.net.ProtocolException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.security.KeyManagementException;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Dictionary;
@@ -68,6 +73,7 @@ import in.andres.kandroid.kanboard.events.OnCreateCommentListener;
 import in.andres.kandroid.kanboard.events.OnCreateSubtaskListener;
 import in.andres.kandroid.kanboard.events.OnCreateTaskListener;
 import in.andres.kandroid.kanboard.events.OnDownloadTaskFileListener;
+import in.andres.kandroid.kanboard.events.OnDuplicateTaskToProjectListener;
 import in.andres.kandroid.kanboard.events.OnErrorListener;
 import in.andres.kandroid.kanboard.events.OnGetActiveSwimlanesListener;
 import in.andres.kandroid.kanboard.events.OnGetAllCategoriesListener;
@@ -91,6 +97,8 @@ import in.andres.kandroid.kanboard.events.OnGetProjectUsersListener;
 import in.andres.kandroid.kanboard.events.OnGetSwimlaneListener;
 import in.andres.kandroid.kanboard.events.OnGetTaskListener;
 import in.andres.kandroid.kanboard.events.OnGetVersionListener;
+import in.andres.kandroid.kanboard.events.OnMoveTaskPositionListener;
+import in.andres.kandroid.kanboard.events.OnMoveTaskToProjectListener;
 import in.andres.kandroid.kanboard.events.OnOpenTaskListener;
 import in.andres.kandroid.kanboard.events.OnRemoveCommentListener;
 import in.andres.kandroid.kanboard.events.OnRemoveSubtaskListener;
@@ -104,6 +112,68 @@ import in.andres.kandroid.kanboard.events.OnUpdateTaskListener;
 @SuppressWarnings("unused")
 public class KanboardAPI {
 
+    public static HttpURLConnection openConnection(URL url, String data) throws IOException, CertificateException, NoSuchAlgorithmException, KeyManagementException, KeyStoreException {
+        SSLContext sslcontext = null;
+        HttpURLConnection con = null;
+        URL tmpURL = url;
+
+        do {
+            con = (HttpURLConnection) tmpURL.openConnection();
+            if (con == null)
+                return null;
+
+            if (url.getProtocol().equalsIgnoreCase("https")) {
+                KeyStore keyStore = KeyStore.getInstance("AndroidCAStore");
+                keyStore.load(null);
+                TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                tmf.init(keyStore);
+                sslcontext = SSLContext.getInstance("TLS");
+                sslcontext.init(null, tmf.getTrustManagers(), null);
+                ((HttpsURLConnection) con).setSSLSocketFactory(sslcontext.getSocketFactory());
+            }
+            con.setConnectTimeout(120000);
+            con.setReadTimeout(120000);
+            con.setInstanceFollowRedirects(false);
+            con.setRequestMethod("POST");
+            con.setRequestProperty("Content-Type", "application/json");
+            con.setRequestProperty("charset", "utf-8");
+            con.setDoOutput(true);
+            con.setDoInput(true);
+            DataOutputStream out = new DataOutputStream(con.getOutputStream());
+            out.writeBytes(data);
+            out.flush();
+            out.close();
+
+            Log.d(Constants.TAG, String.format("API: Connected to %s", con.getURL().toString()));
+
+            if (con.getResponseCode() == 301 || con.getResponseCode() == 302 || con.getResponseCode() == 307 || con.getResponseCode() == 308) {
+                Log.i(Constants.TAG, "Follow URL redirect.");
+                tmpURL = new URL(con.getHeaderField("Location"));
+                Log.d(Constants.TAG, String.format("API: Redirect to %s", tmpURL.toString()));
+                con.disconnect();
+            } else {
+                break;
+            }
+        } while (true);
+        return con;
+    }
+
+    private static Pattern urlPattern = Pattern.compile("(?i)[^/]+?\\.(php|html|htm|asp){1}?$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    public static URL sanitizeURL(String url) throws MalformedURLException {
+        Matcher regexMatcher = urlPattern.matcher(url);
+        if (regexMatcher.find()) {
+            //URL has filename, replace it
+            return new URL(regexMatcher.replaceAll("jsonrpc.php"));
+        } else {
+            //URL hs no filename, add one
+            if (!url.endsWith("/"))
+                url += "/";
+            url += "jsonrpc.php";
+            return new URL(url);
+        }
+    }
+
     private class KanboardAsync extends AsyncTask<KanboardRequest, Void, KanboardResult> {
         @Override
         protected KanboardResult doInBackground(KanboardRequest... params) {
@@ -116,40 +186,12 @@ public class KanboardAPI {
 
                     Log.i(Constants.TAG, String.format("API: Send Request \"%s\"", params[0].Command));
                     if (BuildConfig.DEBUG) Log.v(Constants.TAG, String.format("API: Data:\n%s", s));
-                    con = (HttpURLConnection) kanboardURL.openConnection();
+                    con = KanboardAPI.openConnection(kanboardURL, s);
                     if (con == null)
                         return new KanboardResult(params[0], new JSONObject[]{new JSONObject("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":0,\"message\":\"Unable to open connection\"},\"id\":null}")}, 0);
-                    if (kanboardURL.getProtocol().equalsIgnoreCase("https")) {
-//                        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-//                        InputStream caInput = new BufferedInputStream(mContext.getContentResolver().openInputStream(certificatePath));
-//                        Certificate ca;
-//                        try {
-//                            ca = cf.generateCertificate(caInput);
-//                        } finally {
-//                            caInput.close();
-//                        }
-                        KeyStore keyStore = KeyStore.getInstance("AndroidCAStore");
-                        keyStore.load(null);
-                        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-                        tmf.init(keyStore);
-                        sslcontext = SSLContext.getInstance("TLS");
-                        sslcontext.init(null, tmf.getTrustManagers(), null);
-                        ((HttpsURLConnection)con).setSSLSocketFactory(sslcontext.getSocketFactory());
-                    }
-                    con.setConnectTimeout(120000);
-                    con.setReadTimeout(120000);
-                    con.setInstanceFollowRedirects(true);
-                    con.setRequestMethod("POST");
-                    con.setRequestProperty("Content-Type", "application/json");
-                    con.setRequestProperty("charset", "utf-8");
-                    con.setDoOutput(true);
-                    con.setDoInput(true);
-                    DataOutputStream out = new DataOutputStream(con.getOutputStream());
-                    out.writeBytes(s);
-                    out.flush();
-                    out.close();
 
                     Log.i(Constants.TAG, String.format("API: HTTP Return Code for \"%s\": %d", params[0].Command, con.getResponseCode()));
+
 
                     BufferedReader in;
                     if (con.getResponseCode() < 400)
@@ -163,7 +205,6 @@ public class KanboardAPI {
                     }
                     in.close();
                     httpResponseCode = con.getResponseCode();
-                    con.disconnect();
 
                     Log.i(Constants.TAG, String.format("API: Received Response \"%s\"", params[0].Command));
                     if (BuildConfig.DEBUG)
@@ -178,11 +219,15 @@ public class KanboardAPI {
                         response.put("jsonrpc", "2.0");
                         response.put("id", null);
                         response.put("error", new JSONObject()
-                                .put("code", con.getResponseCode())
+                                .put("code", -50)
+                                .put("responseCode", con.getResponseCode())
                                 .put("message", con.getResponseMessage()))
                                 .put("data", responseStr.toString());
                     }
                     responseList.add(response);
+
+                    con.disconnect();
+
                 } catch (SSLException e) {
                     Log.e(Constants.TAG, "API: SSL Error.");
                     e.printStackTrace();
@@ -231,7 +276,7 @@ public class KanboardAPI {
         @Override
         protected void onPostExecute(KanboardResult s) {
             // Handle Errors
-            if (s == null || s.Result == null) {
+            if (s == null || s.Result == null || s.Result[0] == null) {
                 KanboardError res = new KanboardError(null, null, 0);
                 for (OnErrorListener l: onErrorListeners)
                     l.onError(res);
@@ -595,6 +640,31 @@ public class KanboardAPI {
                 return;
             }
 
+            if (s.Request.Command.equalsIgnoreCase("moveTaskPosition")) {
+                success = s.Result[0].optBoolean("result", false);
+                for (OnMoveTaskPositionListener l: onMoveTaskPositionListeners)
+                    l.onMoveTaskPosition(success);
+                return;
+            }
+
+            if (s.Request.Command.equalsIgnoreCase("moveTaskToProject")) {
+                success = s.Result[0].optBoolean("result", false);
+                for (OnMoveTaskToProjectListener l: onMoveTaskToProjectListeners)
+                    l.onMoveTaskToProject(success);
+                return;
+            }
+
+            if (s.Request.Command.equalsIgnoreCase("duplicateTaskToProject")) {
+                Integer res = null;
+                if (s.Result[0].has("result")) {
+                    success = true;
+                    res = s.Result[0].optInt("result");
+                }
+                for (OnDuplicateTaskToProjectListener l: onDuplicateTaskToProjectListeners)
+                    l.onDuplicateTaskToProject(success, res);
+                return;
+            }
+
             if (s.Request.Command.equalsIgnoreCase("getAllTaskFiles")) {
                 List<KanboardTaskFile> res = null;
                 try {
@@ -914,6 +984,9 @@ public class KanboardAPI {
     private HashSet<OnRemoveTaskListener> onRemoveTaskListeners = new HashSet<>();
     private HashSet<OnCreateTaskListener> onCreateTaskListeners = new HashSet<>();
     private HashSet<OnUpdateTaskListener> onUpdateTaskListeners = new HashSet<>();
+    private HashSet<OnMoveTaskPositionListener> onMoveTaskPositionListeners = new HashSet<>();
+    private HashSet<OnMoveTaskToProjectListener> onMoveTaskToProjectListeners = new HashSet<>();
+    private HashSet<OnDuplicateTaskToProjectListener> onDuplicateTaskToProjectListeners = new HashSet<>();
     private HashSet<OnGetVersionListener> onGetVersionListeners = new HashSet<>();
     private HashSet<OnErrorListener> onErrorListeners = new HashSet<>();
     private HashSet<OnGetDefaultColorListener> onGetDefaultColorListeners = new HashSet<>();
@@ -936,14 +1009,7 @@ public class KanboardAPI {
             }
 
         });
-        serverURL = serverURL.trim();
-        String tmpURL = serverURL;
-        if (!serverURL.endsWith("jsonrpc.php")) {
-            if (!serverURL.endsWith("/"))
-                tmpURL += "/";
-            tmpURL += "jsonrpc.php";
-        }
-        kanboardURL = new URL(tmpURL);
+        kanboardURL = KanboardAPI.sanitizeURL(serverURL.trim());
         Log.i(Constants.TAG, String.format("Host uses %s", kanboardURL.getProtocol()));
 //        threadPoolExecutor = new ThreadPoolExecutor(12, 12, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(256));
         threadPoolExecutor = (ThreadPoolExecutor) AsyncTask.THREAD_POOL_EXECUTOR;
@@ -1071,6 +1137,30 @@ public class KanboardAPI {
 
     public void removeOnRemoveTaskListener(@NonNull OnRemoveTaskListener listener) {
         onRemoveTaskListeners.remove(listener);
+    }
+
+    public void addOnMoveTaskPositionListener(@NonNull OnMoveTaskPositionListener listener) {
+        onMoveTaskPositionListeners.add(listener);
+    }
+
+    public void removeOnMoveTaskPositionListener(@NonNull OnMoveTaskPositionListener listener) {
+        onMoveTaskPositionListeners.remove(listener);
+    }
+
+    public void addOnMoveTaskToProjectListener(@NonNull OnMoveTaskToProjectListener listener) {
+        onMoveTaskToProjectListeners.add(listener);
+    }
+
+    public void removeOnMoveTaskToProjectListener(@NonNull OnMoveTaskToProjectListener listener) {
+        onMoveTaskToProjectListeners.remove(listener);
+    }
+
+    public void addOnDuplicateTaskToProjectListener(@NonNull OnDuplicateTaskToProjectListener listener) {
+        onDuplicateTaskToProjectListeners.add(listener);
+    }
+
+    public void removeOnDuplicateTaskToProjectListener(@NonNull OnDuplicateTaskToProjectListener listener) {
+        onDuplicateTaskToProjectListeners.remove(listener);
     }
 
     public void addOnGetAllCategoriesListener(@NonNull OnGetAllCategoriesListener listener) {
@@ -1351,6 +1441,24 @@ public class KanboardAPI {
 
     public void removeTask(int taskid) {
         new KanboardAsync().executeOnExecutor(threadPoolExecutor, KanboardRequest.removeTask(taskid));
+    }
+
+    public void moveTaskPosition(int projectid, int taskid, int columnid, int position,
+                                 int swimlaneid) {
+        new KanboardAsync().executeOnExecutor(threadPoolExecutor,
+                KanboardRequest.moveTaskPosition(projectid, taskid, columnid, position, swimlaneid));
+    }
+
+    public void moveTaskToProject(int projectid, int taskid, @Nullable Integer columnid,
+                                  @Nullable Integer position, @Nullable Integer swimlaneid) {
+        new KanboardAsync().executeOnExecutor(threadPoolExecutor,
+                KanboardRequest.moveTaskToProject(projectid, taskid, columnid, position, swimlaneid));
+    }
+
+    public void duplicateTaskToProject(int projectid, int taskid, @Nullable Integer columnid,
+                                  @Nullable Integer position, @Nullable Integer swimlaneid) {
+        new KanboardAsync().executeOnExecutor(threadPoolExecutor,
+                KanboardRequest.duplicateTaskToProject(projectid, taskid, columnid, position, swimlaneid));
     }
 
     public void getAllComments(int taskid) {

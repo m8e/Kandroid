@@ -136,7 +136,7 @@
     <string name="pref_acra_user_email_summary">E-Mail-Adresse, die in die Berichte aufgenommen werden soll</string>
     <string name="pref_acra_user_email">E-Mail Adresse</string>
     <string name="pref_acra_alwaysaccept">Berichte automatisch senden</string>
-    <string name="pref_acra_alwaysaccept_enabled">Reports are sent automatically</string>
+    <string name="pref_acra_alwaysaccept_enabled">Berichte werden automatisch gesendet</string>
     <string name="pref_acra_alwaysaccept_disabled">Senden der Berichte muss bestätigt werden</string>
     <string name="taskedit_new_task">Neue Aufgabe</string>
     <string name="taskedit_save">Speichern</string>
@@ -154,4 +154,17 @@
     <string name="menu_caption_file">Datei #%d</string>
     <string name="delete_dlg_file">Datei löschen</string>
     <string name="error_msg_remove_File">Fehler beim löschen der Datei!</string>
+    <string name="taskedit_column">Splate:</string>
+    <string name="taskview_fab_change_column">Spalte ändern</string>
+    <string name="taskview_fab_change_swimlane">Swimlane ändern</string>
+    <string name="service_downloading">Datei wird heruntergeladen…</string>
+    <string name="service_result_empty">Datei konnte nicht heruntergeladen werden!</string>
+    <string name="download_manager_name">Kandroid Datei</string>
+    <string name="error_server_resonse">Ungültige Antwort vom Server.\nBitte prüfen Sie die URL</string>
+    <string name="error_base64_decode">Konnte Datei nicht dekodieren.</string>
+    <string name="toast_wait_loading">Bitte warten. Daten werden geladen.</string>
+    <string name="error_swimlanes_deactivated">Alle Swimlanes sind deaktiviert!\nBitte aktivieren Sie mindestens eine Swimlane.</string>
+    <string name="permission_storage_denied">Speicherzugriff wurde nicht gewährt.</string>
+    <string name="permission_storage_granted">Speicherzugriff wurde gewährt, bitte Download erneut starten.</string>
+    <string name="error_no_sdcard">Kein Speichergerät verfügbar.</string>
 </resources>

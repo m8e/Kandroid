@@ -55,6 +55,7 @@ import java.util.Dictionary;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.List;
 
 import in.andres.kandroid.BuildConfig;
 import in.andres.kandroid.Constants;
@@ -62,14 +63,18 @@ import in.andres.kandroid.R;
 import in.andres.kandroid.Utils;
 import in.andres.kandroid.kanboard.KanboardAPI;
 import in.andres.kandroid.kanboard.KanboardColor;
+import in.andres.kandroid.kanboard.KanboardColumn;
+import in.andres.kandroid.kanboard.KanboardError;
 import in.andres.kandroid.kanboard.KanboardTask;
 import in.andres.kandroid.kanboard.events.OnCreateTaskListener;
+import in.andres.kandroid.kanboard.events.OnErrorListener;
+import in.andres.kandroid.kanboard.events.OnGetColumnsListener;
 import in.andres.kandroid.kanboard.events.OnGetDefaultColorListener;
 import in.andres.kandroid.kanboard.events.OnGetDefaultColorsListener;
 import in.andres.kandroid.kanboard.events.OnGetVersionListener;
 import in.andres.kandroid.kanboard.events.OnUpdateTaskListener;
 
-public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskListener, OnUpdateTaskListener, OnGetDefaultColorListener, OnGetDefaultColorsListener, OnGetVersionListener {
+public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskListener, OnUpdateTaskListener, OnGetDefaultColorListener, OnGetDefaultColorsListener, OnGetVersionListener, OnGetColumnsListener, OnErrorListener {
     private KanboardTask task;
     private String taskTitle;
     private String taskDescription;
@@ -81,10 +86,11 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
     private int swimlaneId;
     private int columnId;
     private int ownerId;
-    private int creatorId;
+//    private int creatorId;
     private String colorId;
     private int projectid;
     private Hashtable<Integer, String> projectUsers;
+    private List<KanboardColumn> projectColumns;
     private Dictionary<String, KanboardColor> kanboardColors;
     private int[] colorArray;
     private String defaultColor;
@@ -97,6 +103,7 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
     private EditText editHoursEstimated;
     private EditText editHoursSpent;
     private Spinner spinnerProjectUsers;
+    private Spinner spinnerColumns;
 
     private KanboardAPI kanboardAPI;
 
@@ -143,10 +150,12 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
         editHoursEstimated = (EditText) findViewById(R.id.edit_hours_estimated);
         editHoursSpent = (EditText) findViewById(R.id.edit_hours_spent);
         spinnerProjectUsers = (Spinner) findViewById(R.id.user_spinner);
+        spinnerColumns = (Spinner) findViewById(R.id.column_spinner);
 
         if (getIntent().hasExtra("task")) {
             isNewTask = false;
             task = (KanboardTask) getIntent().getSerializableExtra("task");
+            projectid = task.getProjectId();
             taskTitle = task.getTitle();
             taskDescription = task.getDescription();
             startDate = task.getDateStarted();
@@ -160,7 +169,7 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
             isNewTask = true;
             projectid = getIntent().getIntExtra("projectid", 0);
 //            colorId = getIntent().getIntExtra("colorid", 0);
-            creatorId = getIntent().getIntExtra("creatorid", 0);
+//            creatorId = getIntent().getIntExtra("creatorid", 0);
             ownerId = getIntent().getIntExtra("ownerid", 0);
             columnId = getIntent().getIntExtra("columnid",0);
             swimlaneId = getIntent().getIntExtra("swimlaneid", 0);
@@ -170,29 +179,35 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this.getBaseContext());
         try {
             kanboardAPI = new KanboardAPI(preferences.getString("serverurl", ""), preferences.getString("username", ""), preferences.getString("password", ""));
+            kanboardAPI.addErrorListener(this);
             kanboardAPI.addOnCreateTaskListener(this);
             kanboardAPI.addOnUpdateTaskListener(this);
             kanboardAPI.addOnGetDefaultColorListener(this);
             kanboardAPI.addOnGetDefaultColorsListener(this);
             kanboardAPI.addOnGetVersionListener(this);
+            kanboardAPI.addOnGetColumnsListener(this);
             kanboardAPI.getDefaultTaskColor();
             kanboardAPI.getDefaultTaskColors();
             kanboardAPI.getVersion();
+            kanboardAPI.getColumns(projectid);
         } catch (IOException e) {
             e.printStackTrace();
         }
 
         if (getIntent().hasExtra("projectusers")) {
-            if (getIntent().getSerializableExtra("projectusers") instanceof HashMap) {
+            Object ou = getIntent().getSerializableExtra("projectusers");
+            if (ou instanceof HashMap) {
                 projectUsers = new Hashtable<>((HashMap<Integer, String>) getIntent().getSerializableExtra("projectusers"));
-                ArrayList<String> possibleOwners = Collections.list(projectUsers.elements());
-                possibleOwners.add(0, "");
-                ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, possibleOwners);
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-                spinnerProjectUsers.setAdapter(adapter);
-                if (ownerId != 0) {
-                    spinnerProjectUsers.setSelection(possibleOwners.indexOf(projectUsers.get(ownerId)));
-                }
+            } else {
+                projectUsers = (Hashtable<Integer, String>) ou;
+            }
+            ArrayList<String> possibleOwners = Collections.list(projectUsers.elements());
+            possibleOwners.add(0, "");
+            ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, possibleOwners);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerProjectUsers.setAdapter(adapter);
+            if (ownerId != 0) {
+                spinnerProjectUsers.setSelection(possibleOwners.indexOf(projectUsers.get(ownerId)));
             }
         }
 
@@ -262,6 +277,56 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
     }
 
     @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putSerializable("projectUsers", projectUsers);
+        outState.putBoolean("isNewTask", isNewTask);
+        if (!isNewTask)
+            outState.putSerializable("task", task);
+        outState.putSerializable("projectColumns", (ArrayList<KanboardColumn>) projectColumns);
+        outState.putSerializable("kanboardColors", (Hashtable<String, KanboardColor>) kanboardColors);
+        outState.putString("colorId", colorId);
+        outState.putString("defaultColor", defaultColor);
+        outState.putInt("projectId", projectid);
+        outState.putInt("ownertId", ownerId);
+        outState.putInt("columntId", columnId);
+        outState.putInt("swimlaneId", swimlaneId);
+        outState.putSerializable("startDate", startDate);
+        outState.putSerializable("dueDate", dueDate);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        Object ou = savedInstanceState.getSerializable("projectUsers");
+        if (ou instanceof HashMap)
+            projectUsers = new Hashtable<>((HashMap<Integer, String>) ou);
+        else
+            projectUsers = (Hashtable<Integer, String>) ou;
+        isNewTask = savedInstanceState.getBoolean("isNewTask");
+        if (!isNewTask)
+            savedInstanceState.getSerializable("task");
+        projectColumns = (ArrayList<KanboardColumn>) savedInstanceState.getSerializable("projectColumns");
+        ou = savedInstanceState.getSerializable("kanboardColors");
+        if (ou instanceof HashMap)
+            kanboardColors = new Hashtable<>((HashMap<String, KanboardColor>) ou);
+        else
+            kanboardColors = (Hashtable<String, KanboardColor>) ou;
+        colorId = savedInstanceState.getString("colorId");
+        defaultColor = savedInstanceState.getString("defaultColor");
+        projectid = savedInstanceState.getInt("projectId");
+        ownerId = savedInstanceState.getInt("ownerId");
+        columnId = savedInstanceState.getInt("columnId");
+        swimlaneId = savedInstanceState.getInt("swimlaneId");
+        startDate = (Date) savedInstanceState.getSerializable("startDate");
+        dueDate = (Date) savedInstanceState.getSerializable("dueDate");
+
+        btnStartDate.setText(Utils.fromHtml(getString(R.string.taskview_date_start, startDate)));
+        btnDueDate.setText(Utils.fromHtml(getString(R.string.taskview_date_due, dueDate)));
+        setButtonColor();
+    }
+
+    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         switch (id) {
@@ -316,15 +381,24 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
     }
 
     @Override
+    public void onError(KanboardError error) {
+
+    }
+
+    @Override
     public void onCreateTask(boolean success, Integer taskid) {
-        setResult(Constants.ResultChanged, new Intent());
-        finish();
+        if (success) {
+            setResult(Constants.ResultChanged, new Intent());
+            finish();
+        }
     }
 
     @Override
     public void onUpdateTask(boolean success) {
-        setResult(Constants.ResultChanged, new Intent());
-        finish();
+        if (success) {
+            setResult(Constants.ResultChanged, new Intent());
+            finish();
+        }
     }
 
     @Override
@@ -375,5 +449,15 @@ public class TaskEditActivity extends AppCompatActivity implements OnCreateTaskL
             btnColor.setText(Utils.fromHtml(getString(R.string.taskedit_color, kanboardColors.get(defaultColor).getName())));
         }
         btnColor.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null);
+    }
+
+    @Override
+    public void onGetColumns(boolean success, List<KanboardColumn> result) {
+        if (success) {
+            projectColumns = result;
+            ArrayAdapter<KanboardColumn> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, projectColumns);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerColumns.setAdapter(adapter);
+        }
     }
 }

@@ -12,18 +12,32 @@
         android:orderInCategory="100"
         android:icon="@drawable/subtask_white"
         android:title="@string/taskview_fab_new_subtask"
+        android:visible="false"
         app:showAsAction="never"/>
     <item
         android:id="@+id/action_new_comment"
         android:orderInCategory="100"
         android:icon="@drawable/comment"
         android:title="@string/taskview_fab_new_comment"
+        android:visible="false"
         app:showAsAction="never"/>
     <item
         android:id="@+id/action_edit_task"
         android:orderInCategory="100"
         android:icon="@drawable/task_edit"
         android:title="@string/taskview_fab_edit_task"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_change_column"
+        android:orderInCategory="100"
+        android:icon="@drawable/task_edit"
+        android:title="@string/taskview_fab_change_column"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_change_swimlane"
+        android:orderInCategory="100"
+        android:icon="@drawable/task_edit"
+        android:title="@string/taskview_fab_change_swimlane"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_close_task"

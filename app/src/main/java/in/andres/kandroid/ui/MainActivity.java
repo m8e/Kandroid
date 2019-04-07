@@ -48,6 +48,7 @@ import android.view.SubMenu;
 import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -140,12 +141,16 @@ public class MainActivity extends AppCompatActivity
     private OnGetMeListener getMeListener = new OnGetMeListener() {
         @Override
         public void onGetMe(boolean success, KanboardUserInfo result) {
-            Me = result;
-            if (!showProgress(false)) {
-                if (mode == 0)
-                    combineDashboard();
-                else
-                    combineProject();
+            boolean prog = !showProgress(false);
+            if (success) {
+                Me = result;
+                ((TextView) findViewById(R.id.nav_serverurl)).setText(Me.getName());
+                if (prog) {
+                    if (mode == 0)
+                        combineDashboard();
+                    else
+                        combineProject();
+                }
             }
         }
     };
@@ -324,9 +329,9 @@ public class MainActivity extends AppCompatActivity
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
                 this, drawer, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close) {
             public void onDrawerOpened(View drawerView) {
-                TextView mServerUrl = (TextView) findViewById(R.id.nav_serverurl);
-                if ((Me != null) && (mServerUrl != null))
-                    mServerUrl.setText(Me.getName());
+//                TextView mServerUrl = (TextView) findViewById(R.id.nav_serverurl);
+//                if ((Me != null) && (mServerUrl != null))
+//                    mServerUrl.setText(Me.getName());
             }
         };
         drawer.addDrawerListener(toggle);
@@ -388,8 +393,8 @@ public class MainActivity extends AppCompatActivity
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
+    protected void onPostResume() {
+        super.onPostResume();
         if (mDashboard != null && (progressBarCount <= 0) && (mode == 0))
             showDashboard();
         if (mProject != null && progressBarCount <= 0 && mode > 0)
@@ -504,6 +509,8 @@ public class MainActivity extends AppCompatActivity
             mDashboard.setExtra(mMyOverduetasks, mMyActivities, mProjectList);
             populateProjectsMenu();
             showDashboard();
+            NavigationView nav = (NavigationView) findViewById(R.id.nav_view);
+            nav.getMenu().findItem(R.id.nav_dashboard).setEnabled(true);
         } else {
             Log.w(Constants.TAG, "Something happened while assembling mDashboard.");
         }
@@ -563,11 +570,25 @@ public class MainActivity extends AppCompatActivity
 
         mArrayPager.removeAllFragments();
         mArrayPager.addFragment(ProjectOverviewFragment.newInstance(), getString(R.string.tab_overview));
-        for (KanboardColumn column: mProject.getColumns()) {
-            mArrayPager.addFragment(ProjectTasksFragment.newInstance(column), column.getTitle());
+        if (mProject.getSwimlanes().size() > 0) {
+            for (KanboardColumn column : mProject.getColumns()) {
+                mArrayPager.addFragment(ProjectTasksFragment.newInstance(column), column.getTitle());
+            }
+            mArrayPager.addFragment(ProjectOverdueTasksFragment.newInstance(), getString(R.string.tab_overdue_tasks));
+            mArrayPager.addFragment(ProjectInactiveTasksFragment.newInstance(), getString(R.string.tab_inactive_tasks));
+
+            if (mProject.hasHiddenSwimlanes()) {
+                Toast.makeText(this, getString(R.string.hint_swimlane_deactivated), Toast.LENGTH_LONG).show();
+            }
+        } else {
+            // ask user to activate at least one swimlane
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle(android.R.string.dialog_alert_title);
+            builder.setMessage(R.string.error_swimlanes_deactivated);
+            builder.setIcon(android.R.drawable.ic_dialog_alert);
+            builder.setPositiveButton(android.R.string.ok, null);
+            builder.show();
         }
-        mArrayPager.addFragment(ProjectOverdueTasksFragment.newInstance(), getString(R.string.tab_overdue_tasks));
-        mArrayPager.addFragment(ProjectInactiveTasksFragment.newInstance(), getString(R.string.tab_inactive_tasks));
         mArrayPager.notifyDataSetChanged();
     }
 
@@ -684,6 +705,8 @@ public class MainActivity extends AppCompatActivity
         kanboardAPI.getMe();
 
         if (mode == 0) {
+            NavigationView nav = (NavigationView) findViewById(R.id.nav_view);
+            nav.getMenu().findItem(R.id.nav_dashboard).setEnabled(false);
             Log.i(Constants.TAG, "Loading dashboard data.");
             showProgress(true);
             kanboardAPI.getDefaultTaskColors();
